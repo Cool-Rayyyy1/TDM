@@ -1,0 +1,23 @@
+# Large weights & generated data
+evaluation/hpsv2/weights/*.pt
+evaluation/outputs/
+outputs/
+logs/
+cache.pt
+pretrained_models/
+
+# HF / eval cache
+evaluation/hpsv2/_hf_cache/
+evaluation/hpsv2/assets/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Env & IDE
+.env
+.venv/
+.idea/
+.vscode/
