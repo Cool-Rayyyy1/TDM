@@ -21,3 +21,27 @@ __pycache__/
 .venv/
 .idea/
 .vscode/
+
+# large outputs / checkpoints / caches
+outputs/
+output/
+checkpoints/
+checkpoint-*/
+pretrained_models/
+*.ckpt
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.tar
+*.tgz
+*.zip
+*.jpg
+*.png
+*.gif
+*.mp4
+*.npy
+*.npz
+__pycache__/
+.cache/
+wandb/

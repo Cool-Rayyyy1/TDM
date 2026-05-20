@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
-# TDM 2-step distillation launcher (standalone, does not call run_tdm_train.sh).
-#
-# Student trajectory (total_steps=900): 899 -> 449
-# Output: outputs/tdm_pixart1024_steps899-449_cfg4.5_totalstep900-Huber/
-#
-# Usage:
-#   cd /mnt/afs_zhangyunzhe/TDM
-#   bash scripts/run_tdm_train_2step.sh
-#
+# TDM 2-step distillation: train_tdm_demo_2step.py (total_steps=900 -> T=899,449).
 set -euo pipefail
 
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-/mnt/afs_zhangyunzhe}"
@@ -15,7 +7,7 @@ CONDA_ROOT="${CONDA_ROOT:-${WORKSPACE_ROOT}/miniconda3}"
 CONDA_ENV="${CONDA_ENV:-tdm}"
 TDM_DIR="${TDM_DIR:-${WORKSPACE_ROOT}/TDM}"
 
-PIXART_MODEL="${PIXART_MODEL:-${WORKSPACE_ROOT}/pretrained_models/PixArt-XL-2-1024-MS/PixArt-XL-2-1024-MS}"
+PIXART_MODEL="${PIXART_MODEL:-/mnt/afs_zhangyunzhe/pretrained_models/PixArt-XL-2-512x512}"
 PROMPT_JSONL="${PROMPT_JSONL:-${WORKSPACE_ROOT}/dataset/JourneyDB/data/train/train_anno/train_anno.jsonl}"
 
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
@@ -26,22 +18,16 @@ export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0,1}"
 BSZ="${BSZ:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-2}"
 MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29504}"
-MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-12001}"
+MAX_TRAIN_STEPS="${MAX_TRAIN_STEPS:-15001}"
 CFG="${CFG:-4.5}"
 TOTAL_STEPS="${TOTAL_STEPS:-900}"
-RESOLUTION="${RESOLUTION:-1024}"
 CHECKPOINTING_STEPS="${CHECKPOINTING_STEPS:-500}"
-DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
-
-# 2-step only
-NUM_STUDENT_STEPS=2
-STUDENT_TIMESTEPS="${STUDENT_TIMESTEPS:-899-449}"
-OUTPUT_DIR="${OUTPUT_DIR:-./outputs/tdm_pixart1024_steps${STUDENT_TIMESTEPS}}"
+OUTPUT_DIR="${OUTPUT_DIR:-./outputs/tdm_pixart512_2step}"
 
 LOG_DIR="${LOG_DIR:-${TDM_DIR}/logs}"
 mkdir -p "${LOG_DIR}"
 RUN_ID="${RUN_ID:-$(date +%Y%m%d_%H%M%S)}"
-LOG_FILE="${LOG_FILE:-${LOG_DIR}/train_steps${STUDENT_TIMESTEPS}_${RUN_ID}.log}"
+LOG_FILE="${LOG_FILE:-${LOG_DIR}/train_pixart512_2step_${RUN_ID}.log}"
 
 source "${CONDA_ROOT}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV}"
@@ -52,9 +38,11 @@ EXTRA_ARGS=()
 [[ -n "${MAX_TRAIN_SAMPLES:-}" ]] && EXTRA_ARGS+=(--max_train_samples "${MAX_TRAIN_SAMPLES}")
 
 echo "=============================================="
-echo "TDM train | 2-step | anchors ${STUDENT_TIMESTEPS} | log ${LOG_FILE}"
-echo "output: ${OUTPUT_DIR} -> ..._cfg${CFG}_totalstep${TOTAL_STEPS}-Huber"
-echo "ckpt every ${CHECKPOINTING_STEPS} steps"
+echo "TDM 2-step train (899 -> 449 when total_steps=${TOTAL_STEPS})"
+echo "  script: train_tdm_demo_2step.py"
+echo "  model: ${PIXART_MODEL}"
+echo "  output: ${OUTPUT_DIR} -> ..._cfg${CFG}_totalstep${TOTAL_STEPS}-Huber"
+echo "  log: ${LOG_FILE}"
 echo "=============================================="
 
 CMD=(
@@ -62,7 +50,7 @@ CMD=(
   --main_process_port "${MAIN_PROCESS_PORT}"
   --num_processes "${NUM_PROCESSES}"
   --mixed_precision fp16
-  train_tdm_demo.py
+  train_tdm_demo_2step.py
   --pretrained_model_name_or_path "${PIXART_MODEL}"
   --prompt_jsonl_path "${PROMPT_JSONL}"
   --train_batch_size="${BSZ}"
@@ -75,13 +63,10 @@ CMD=(
   --use_8bit_adam
   --cfg "${CFG}"
   --total_steps "${TOTAL_STEPS}"
-  --num_student_steps "${NUM_STUDENT_STEPS}"
   --lr_scheduler cosine_with_restarts
   --lr_warmup_steps 50
   --use_huber --use_separate
-  --resolution "${RESOLUTION}"
   --checkpointing_steps "${CHECKPOINTING_STEPS}"
-  --dataloader_num_workers "${DATALOADER_NUM_WORKERS}"
   --output_dir "${OUTPUT_DIR}"
   "${EXTRA_ARGS[@]}"
   "$@"

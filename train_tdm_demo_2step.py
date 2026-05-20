@@ -131,6 +131,9 @@ if is_wandb_available():
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.26.0.dev0")
 
+# Student trajectory length: 2-step distillation (e.g. total_steps=900 -> T=899, 449).
+NUM_STUDENT_STEPS = 2
+
 logger = get_logger(__name__, log_level="INFO")
 
 
@@ -234,7 +237,7 @@ def log_validation(vae, text_encoder, tokenizer, unet, args, accelerator, weight
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Simple example of a training script.")
+    parser = argparse.ArgumentParser(description="TDM PixArt training — 2-step student distillation.")
     parser.add_argument(
         "--input_perturbation", type=float, default=0, help="The scale of input perturbation. Recommended 0.1."
     )
@@ -330,7 +333,7 @@ def parse_args():
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="TDM-pixart",
+        default="TDM-pixart-2step",
         help="The output directory where the model predictions and checkpoints will be written.",
     )
     parser.add_argument(
@@ -995,6 +998,7 @@ def main():
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    logger.info(f"  Num student steps = {NUM_STUDENT_STEPS} (anchors e.g. 899,449 when total_steps=900)")
     global_step = 0
     first_epoch = 0
 
@@ -1180,7 +1184,7 @@ def main():
                     
                 
                 with torch.no_grad():
-                    imgs_list, noisy_imgs_list = generate_new(unet,noise_scheduler,noise, noise,encoder_hidden_states, prompt_attention_mask, steps = 4, return_mid = True, total_steps = args.total_steps) # [ [bs,4,64,64] * K ]
+                    imgs_list, noisy_imgs_list = generate_new(unet,noise_scheduler,noise, noise,encoder_hidden_states, prompt_attention_mask, steps = NUM_STUDENT_STEPS, return_mid = True, total_steps = args.total_steps) # [ [bs,4,64,64] * K ]
                     noisy_imgs_list.reverse()
                 
                 fw_t = 240
@@ -1188,14 +1192,14 @@ def main():
                 unet_fake.requires_grad_(True)
                 with torch.no_grad():
                     encoder_hidden_states_fake = encoder_hidden_states
-                    ind_t = torch.randint(1, 5, (bsz,),
+                    ind_t = torch.randint(1, NUM_STUDENT_STEPS + 1, (bsz,),
                                               device=noise.device).long()
                     noisy_latents = torch.randn_like(latents)
                     for i in range(latents.shape[0]):
                         noisy_latents[i] = noisy_imgs_list[ind_t[i]][i]
                     noise_g = torch.randn_like(latents)
-                    timesteps_g = ind_t * total_steps // 4 - 1
-                    timesteps_mid_ori = timesteps_g -  total_steps // 4 + 1
+                    timesteps_g = ind_t * total_steps // NUM_STUDENT_STEPS - 1
+                    timesteps_mid_ori = timesteps_g -  total_steps // NUM_STUDENT_STEPS + 1
                     timesteps_mid = timesteps_mid_ori.clone()
                     if args.use_randmid: # This can regularize the generator.
                         for i in range(latents.shape[0]):
@@ -1229,14 +1233,14 @@ def main():
 
                 # Train the Few-Step Unet generator
                 if global_step % 1 == 0:
-                    ind_t = torch.randint(1, 5, (bsz,),
+                    ind_t = torch.randint(1, NUM_STUDENT_STEPS + 1, (bsz,),
                                               device=noise.device).long()
                     noisy_latents = torch.randn_like(latents)
                     for i in range(latents.shape[0]):
                         noisy_latents[i] = noisy_imgs_list[ind_t[i]][i]
                     noise_g = torch.randn_like(latents)
-                    timesteps_g = ind_t * total_steps // 4 - 1
-                    timesteps_mid_ori = timesteps_g -  total_steps // 4 + 1
+                    timesteps_g = ind_t * total_steps // NUM_STUDENT_STEPS - 1
+                    timesteps_mid_ori = timesteps_g -  total_steps // NUM_STUDENT_STEPS + 1
                     timesteps_mid = timesteps_mid_ori.clone()
                     if args.use_randmid: # This can regularize the generator.
                         for i in range(latents.shape[0]):
@@ -1296,12 +1300,12 @@ def main():
                             fixed_noise = torch.randn([4, 4, 64, 64]).to(torch.float16).to(accelerator.device)
                             fixed_T = T
                         with torch.no_grad():
-                            fixed_latents = generate_new(unet,noise_scheduler,fixed_noise, fixed_noise,fixed_c, fixed_mask, steps = 4, total_steps = args.total_steps)
+                            fixed_latents = generate_new(unet,noise_scheduler,fixed_noise, fixed_noise,fixed_c, fixed_mask, steps = NUM_STUDENT_STEPS, total_steps = args.total_steps)
                             fixed_latents_1step = generate_new(unet,noise_scheduler,fixed_noise, fixed_noise,fixed_c, fixed_mask, steps = 1, total_steps = args.total_steps)
                             images_noise = vae.decode(fixed_latents[:4].to(vae.dtype) / vae.config.scaling_factor, return_dict=False)[0]
                             images_fixed1 = vae.decode(fixed_latents_1step[:4].to(vae.dtype) / vae.config.scaling_factor, return_dict=False)[0].clamp(-1, 1) * 0.5 + 0.5
-                            latent_4step = generate_new(unet,noise_scheduler,latents, noise,encoder_hidden_states, prompt_attention_mask, steps = 4, total_steps = args.total_steps)
-                            images_4step = vae.decode(latent_4step.to(vae.dtype) / vae.config.scaling_factor, return_dict=False)[0].clamp(-1,1)*0.5+0.5
+                            latent_2step = generate_new(unet,noise_scheduler,latents, noise,encoder_hidden_states, prompt_attention_mask, steps = NUM_STUDENT_STEPS, total_steps = args.total_steps)
+                            images_2step = vae.decode(latent_2step.to(vae.dtype) / vae.config.scaling_factor, return_dict=False)[0].clamp(-1,1)*0.5+0.5
                             images_1step = \
                                 vae.decode(model_latents[:4].to(vae.dtype) / vae.config.scaling_factor, return_dict=False)[
                                     0]
@@ -1309,9 +1313,9 @@ def main():
                             images_noise = images_noise.clamp(-1, 1) * 0.5 + 0.5                    
                         if accelerator.is_main_process:
                             save_image(images_1step, f'./{args.output_dir}/1step.jpg', normalize=False, nrow=2)
-                            save_image(images_noise, f'./{args.output_dir}/fixed_4step_{global_step}.jpg', normalize=False, nrow=2)
+                            save_image(images_noise, f'./{args.output_dir}/fixed_2step_{global_step}.jpg', normalize=False, nrow=2)
                             save_image(images_fixed1, f'./{args.output_dir}/fixed_1step_{global_step}.jpg', normalize=False, nrow=2)
-                            save_image(images_4step[:4], f'./{args.output_dir}/4step.jpg', normalize = False, nrow = 2)
+                            save_image(images_2step[:4], f'./{args.output_dir}/2step.jpg', normalize = False, nrow = 2)
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:

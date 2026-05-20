@@ -9,6 +9,7 @@ from typing import Dict, List, Tuple
 import hpsv2
 import numpy as np
 import torch
+from PIL import Image
 from torch.utils.data import DataLoader
 
 EVAL_ROOT = Path(__file__).resolve().parent
@@ -54,7 +55,7 @@ def _score_categories_subset(
             self.transforms = transforms
             self.image_folder = image_folder
             self.tokenizer = tokenizer
-            self.open_image = __import__("PIL.Image", fromlist=["Image"]).Image.open
+            self.open_image = Image.open
             import json
             import os
 
